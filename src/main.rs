@@ -1,29 +1,37 @@
-
-use axum::{routing::get, Json, Router};
-use serde_json::json;
+use rust_fhir::{create_router, AppState, MemoryStorage, ServerConfig};
 use std::net::SocketAddr;
-
-async fn health() -> Json<serde_json::Value> {
-    Json(json!({
-        "status": "ok",
-        "service": "rust-fhir-server"
-    }))
-}
+use std::sync::Arc;
 
 #[tokio::main]
 async fn main() {
-    let app = Router::new()
-        .route("/health", get(health));
+    // Read server configuration from environment
+    let config = ServerConfig::from_env();
+    let addr: SocketAddr = format!("{}:{}", config.host, config.port)
+        .parse()
+        .expect("Invalid host or port configuration");
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+    // Initialize in-memory storage engine
+    let storage = Arc::new(MemoryStorage::new());
+
+    let state = AppState {
+        config: config.clone(),
+        storage,
+    };
+
+    let app = create_router(state);
 
     let listener = tokio::net::TcpListener::bind(addr)
         .await
-        .expect("Failed to bind address");
+        .expect("Failed to bind TCP listener");
 
-    println!("FHIR server running at http://{addr}");
+    println!("====================================================");
+    println!(" Rust FHIR R4 Server");
+    println!(" Running at: {}", config.base_url);
+    println!(" Conformance metadata: {}/metadata", config.base_url);
+    println!(" Health check: {}/health", config.base_url);
+    println!("====================================================");
 
     axum::serve(listener, app)
         .await
-        .expect("Server failed");
+        .expect("Server terminated unexpectedly");
 }
