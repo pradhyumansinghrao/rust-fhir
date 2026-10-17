@@ -4,6 +4,7 @@ use crate::model::resource::{generate_uuid, is_valid_id, StoredResource};
 use crate::search::engine::{SearchEngine, SearchResult};
 use crate::search::params::SearchParams;
 use crate::storage::{FhirStorage, StorageError};
+use async_trait::async_trait;
 use parking_lot::RwLock;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -33,8 +34,9 @@ impl MemoryStorage {
     }
 }
 
+#[async_trait]
 impl FhirStorage for MemoryStorage {
-    fn create(&self, resource_type: &str, resource: Value) -> Result<StoredResource, StorageError> {
+    async fn create(&self, resource_type: &str, resource: Value) -> Result<StoredResource, StorageError> {
         let mut state = self.state.write();
 
         // Extract or generate resource ID
@@ -76,7 +78,7 @@ impl FhirStorage for MemoryStorage {
         Ok(stored)
     }
 
-    fn read(&self, resource_type: &str, id: &str) -> Result<StoredResource, StorageError> {
+    async fn read(&self, resource_type: &str, id: &str) -> Result<StoredResource, StorageError> {
         let state = self.state.read();
         let key = (resource_type.to_string(), id.to_string());
 
@@ -108,7 +110,7 @@ impl FhirStorage for MemoryStorage {
         }
     }
 
-    fn vread(&self, resource_type: &str, id: &str, version_id: &str) -> Result<StoredResource, StorageError> {
+    async fn vread(&self, resource_type: &str, id: &str, version_id: &str) -> Result<StoredResource, StorageError> {
         let state = self.state.read();
         let key = (resource_type.to_string(), id.to_string());
 
@@ -133,7 +135,7 @@ impl FhirStorage for MemoryStorage {
         )))
     }
 
-    fn update(
+    async fn update(
         &self,
         resource_type: &str,
         id: &str,
@@ -175,7 +177,7 @@ impl FhirStorage for MemoryStorage {
         Ok(stored)
     }
 
-    fn delete(&self, resource_type: &str, id: &str) -> Result<(), StorageError> {
+    async fn delete(&self, resource_type: &str, id: &str) -> Result<(), StorageError> {
         let mut state = self.state.write();
         let key = (resource_type.to_string(), id.to_string());
 
@@ -198,7 +200,7 @@ impl FhirStorage for MemoryStorage {
         Ok(())
     }
 
-    fn history_instance(&self, resource_type: &str, id: &str) -> Result<Vec<StoredResource>, StorageError> {
+    async fn history_instance(&self, resource_type: &str, id: &str) -> Result<Vec<StoredResource>, StorageError> {
         let state = self.state.read();
         let key = (resource_type.to_string(), id.to_string());
 
@@ -211,7 +213,7 @@ impl FhirStorage for MemoryStorage {
         Ok(sorted)
     }
 
-    fn history_type(&self, resource_type: &str) -> Result<Vec<StoredResource>, StorageError> {
+    async fn history_type(&self, resource_type: &str) -> Result<Vec<StoredResource>, StorageError> {
         let state = self.state.read();
         let mut all_type = Vec::new();
 
@@ -225,7 +227,7 @@ impl FhirStorage for MemoryStorage {
         Ok(all_type)
     }
 
-    fn history_system(&self) -> Result<Vec<StoredResource>, StorageError> {
+    async fn history_system(&self) -> Result<Vec<StoredResource>, StorageError> {
         let state = self.state.read();
         let mut all = Vec::new();
 
@@ -237,7 +239,7 @@ impl FhirStorage for MemoryStorage {
         Ok(all)
     }
 
-    fn search(&self, resource_type: &str, params: &SearchParams) -> Result<SearchResult, StorageError> {
+    async fn search(&self, resource_type: &str, params: &SearchParams) -> Result<SearchResult, StorageError> {
         let state = self.state.read();
         let matching_resources: Vec<StoredResource> = state
             .resources
@@ -249,7 +251,7 @@ impl FhirStorage for MemoryStorage {
         Ok(SearchEngine::evaluate(&matching_resources, params))
     }
 
-    fn process_bundle(&self, bundle: Value) -> Result<Value, StorageError> {
+    async fn process_bundle(&self, bundle: Value) -> Result<Value, StorageError> {
         let bundle_type = bundle
             .get("type")
             .and_then(|t| t.as_str())
@@ -262,8 +264,8 @@ impl FhirStorage for MemoryStorage {
             .unwrap_or_default();
 
         match bundle_type {
-            "transaction" => self.execute_transaction(&entries),
-            "batch" => self.execute_batch(&entries),
+            "transaction" => self.execute_transaction(&entries).await,
+            "batch" => self.execute_batch(&entries).await,
             _ => Err(StorageError::BadRequest(format!(
                 "Unsupported bundle type '{bundle_type}'. Server accepts 'transaction' or 'batch'."
             ))),
@@ -272,7 +274,7 @@ impl FhirStorage for MemoryStorage {
 }
 
 impl MemoryStorage {
-    fn execute_transaction(&self, entries: &[Value]) -> Result<Value, StorageError> {
+    async fn execute_transaction(&self, entries: &[Value]) -> Result<Value, StorageError> {
         // Clone state for atomic rollback
         let backup_state = self.state.read().clone();
         let mut response_entries = Vec::new();
@@ -298,7 +300,7 @@ impl MemoryStorage {
                 url,
                 entry.get("resource").cloned(),
                 request.get("ifMatch").and_then(|m| m.as_str()),
-            );
+            ).await;
 
             match res_result {
                 Ok(resp_entry) => response_entries.push(resp_entry),
@@ -322,7 +324,7 @@ impl MemoryStorage {
         Ok(resp_bundle.to_value())
     }
 
-    fn execute_batch(&self, entries: &[Value]) -> Result<Value, StorageError> {
+    async fn execute_batch(&self, entries: &[Value]) -> Result<Value, StorageError> {
         let mut response_entries = Vec::new();
 
         for entry in entries {
@@ -362,7 +364,7 @@ impl MemoryStorage {
                 url,
                 entry.get("resource").cloned(),
                 request.get("ifMatch").and_then(|m| m.as_str()),
-            ) {
+            ).await {
                 Ok(resp_entry) => response_entries.push(resp_entry),
                 Err(err) => {
                     let status = format!("{} {}", err.status_code().as_u16(), err.status_code().canonical_reason().unwrap_or(""));
@@ -395,7 +397,7 @@ impl MemoryStorage {
         Ok(resp_bundle.to_value())
     }
 
-    fn execute_entry_operation(
+    async fn execute_entry_operation(
         &self,
         method: &str,
         url: &str,
@@ -417,7 +419,7 @@ impl MemoryStorage {
                     StorageError::BadRequest("Missing resource body for POST".to_string())
                 })?;
 
-                let stored = self.create(resource_type, body)?;
+                let stored = self.create(resource_type, body).await?;
                 let location = format!("{resource_type}/{}/_history/{}", stored.id, stored.version_id);
 
                 Ok(BundleEntry {
@@ -437,7 +439,7 @@ impl MemoryStorage {
             "GET" => {
                 if path_segments.len() == 2 {
                     let (res_type, id) = (path_segments[0], path_segments[1]);
-                    let stored = self.read(res_type, id)?;
+                    let stored = self.read(res_type, id).await?;
                     Ok(BundleEntry {
                         full_url: Some(format!("{res_type}/{id}")),
                         resource: Some(stored.to_json()),
@@ -454,7 +456,7 @@ impl MemoryStorage {
                 } else if path_segments.len() == 1 {
                     let res_type = path_segments[0];
                     let params = SearchParams::parse_query(query_str, 20, 100);
-                    let result = self.search(res_type, &params)?;
+                    let result = self.search(res_type, &params).await?;
 
                     let entries: Vec<BundleEntry> = result
                         .items
@@ -497,7 +499,7 @@ impl MemoryStorage {
                     StorageError::BadRequest("Missing resource body for PUT".to_string())
                 })?;
 
-                let stored = self.update(res_type, id, body, if_match)?;
+                let stored = self.update(res_type, id, body, if_match).await?;
                 Ok(BundleEntry {
                     full_url: Some(format!("{res_type}/{id}")),
                     resource: Some(stored.to_json()),
@@ -517,7 +519,7 @@ impl MemoryStorage {
                     return Err(StorageError::BadRequest("DELETE url must be [resourceType]/[id]".to_string()));
                 }
                 let (res_type, id) = (path_segments[0], path_segments[1]);
-                self.delete(res_type, id)?;
+                self.delete(res_type, id).await?;
                 Ok(BundleEntry {
                     full_url: Some(format!("{res_type}/{id}")),
                     resource: None,

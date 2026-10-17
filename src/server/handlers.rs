@@ -67,7 +67,7 @@ pub async fn create_resource(
         );
     }
 
-    match state.storage.create(&resource_type, payload) {
+    match state.storage.create(&resource_type, payload).await {
         Ok(stored) => {
             let loc = format!("{}/{}/_history/{}", resource_type, stored.id, stored.version_id);
             FhirResourceResponse {
@@ -93,7 +93,7 @@ pub async fn read_resource(
         return outcome_bad_request(&format!("Invalid resource ID '{id}'"));
     }
 
-    match state.storage.read(&resource_type, &id) {
+    match state.storage.read(&resource_type, &id).await {
         Ok(stored) => {
             if let Some(if_none_match) = get_if_none_match(&headers) {
                 let clean_match = if_none_match.trim().trim_start_matches("W/").trim_matches('"');
@@ -124,7 +124,7 @@ pub async fn vread_resource(
         return outcome_bad_request(&format!("Invalid resource ID '{id}'"));
     }
 
-    match state.storage.vread(&resource_type, &id, &version_id) {
+    match state.storage.vread(&resource_type, &id, &version_id).await {
         Ok(stored) => FhirResourceResponse {
             status: StatusCode::OK,
             resource: stored,
@@ -175,7 +175,7 @@ pub async fn update_resource(
 
     let if_match = get_if_match(&headers);
 
-    match state.storage.update(&resource_type, &id, payload, if_match) {
+    match state.storage.update(&resource_type, &id, payload, if_match).await {
         Ok(stored) => {
             let loc = format!("{}/{}/_history/{}", resource_type, stored.id, stored.version_id);
             FhirResourceResponse {
@@ -200,7 +200,7 @@ pub async fn delete_resource(
         return outcome_bad_request(&format!("Invalid resource ID '{id}'"));
     }
 
-    match state.storage.delete(&resource_type, &id) {
+    match state.storage.delete(&resource_type, &id).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(err) => outcome_error(err),
     }
@@ -222,7 +222,7 @@ pub async fn search_type(
         state.config.max_page_size,
     );
 
-    match state.storage.search(&resource_type, &params) {
+    match state.storage.search(&resource_type, &params).await {
         Ok(result) => {
             let entries: Vec<BundleEntry> = result
                 .items
@@ -291,7 +291,7 @@ pub async fn history_instance(
         return outcome_bad_request(&format!("Invalid resource ID '{id}'"));
     }
 
-    match state.storage.history_instance(&resource_type, &id) {
+    match state.storage.history_instance(&resource_type, &id).await {
         Ok(history) => {
             let entries = history_to_bundle_entries(&state.config.base_url, &resource_type, history);
             let bundle = Bundle::new_history(entries);
@@ -313,7 +313,7 @@ pub async fn history_type(
         return outcome_bad_request(&format!("Invalid resource type '{resource_type}'"));
     }
 
-    match state.storage.history_type(&resource_type) {
+    match state.storage.history_type(&resource_type).await {
         Ok(history) => {
             let entries = history_to_bundle_entries(&state.config.base_url, &resource_type, history);
             let bundle = Bundle::new_history(entries);
@@ -328,7 +328,7 @@ pub async fn history_type(
 }
 
 pub async fn history_system(State(state): State<AppState>) -> Response {
-    match state.storage.history_system() {
+    match state.storage.history_system().await {
         Ok(history) => {
             let entries: Vec<BundleEntry> = history
                 .into_iter()
@@ -359,7 +359,7 @@ pub async fn process_bundle(
     State(state): State<AppState>,
     Json(payload): Json<Value>,
 ) -> Response {
-    match state.storage.process_bundle(payload) {
+    match state.storage.process_bundle(payload).await {
         Ok(resp_bundle) => FhirJsonResponse {
             status: StatusCode::OK,
             body: resp_bundle,

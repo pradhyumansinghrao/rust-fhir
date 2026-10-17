@@ -21,6 +21,8 @@ impl TestClient {
             base_url: "http://127.0.0.1:3000".to_string(),
             default_page_size: 20,
             max_page_size: 100,
+            database_url: "sqlite://:memory:".to_string(),
+            storage_backend: rust_fhir::DbBackend::Memory,
         };
 
         let storage = Arc::new(MemoryStorage::new());
