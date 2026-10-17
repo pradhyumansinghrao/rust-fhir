@@ -122,8 +122,13 @@ async fn test_sqlite_disk_persistence_across_reconnect() {
     let db_path = "test_persistence.db";
     let db_url = format!("sqlite://{db_path}");
 
-    // Clean up any stale file from prior runs
-    let _ = std::fs::remove_file(db_path);
+    let cleanup = || {
+        let _ = std::fs::remove_file("test_persistence.db");
+        let _ = std::fs::remove_file("test_persistence.db-wal");
+        let _ = std::fs::remove_file("test_persistence.db-shm");
+    };
+
+    cleanup();
 
     let patient_id = {
         // Scope 1: Open database, insert record, then close/drop connection pool
@@ -159,8 +164,7 @@ async fn test_sqlite_disk_persistence_across_reconnect() {
         assert_eq!(search_res.total, 1);
     }
 
-    // Clean up test file
-    let _ = std::fs::remove_file(db_path);
+    cleanup();
 }
 
 #[tokio::test]
