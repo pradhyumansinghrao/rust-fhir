@@ -1,1 +1,12 @@
 /target
+
+# SQLite database files and temporary transaction logs
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Environment variables
+.env
